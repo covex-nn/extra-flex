@@ -1,5 +1,5 @@
 {
-    "name": "covex-nn/flex-inline",
+    "name": "covex-nn/extra-flex",
     "type": "composer-plugin",
     "license": "MIT",
     "description": "ExtraFlex plugin",
