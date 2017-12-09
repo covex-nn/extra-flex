@@ -1,0 +1,14 @@
+*
+!.gitignore
+!composer.json
+!src/
+src/*
+!src/Composer/
+!src/Composer/*
+
+###> symfony/framework-bundle ###
+.env
+/public/bundles/
+/var/
+/vendor/
+###< symfony/framework-bundle ###
