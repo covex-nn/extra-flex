@@ -78,16 +78,15 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
                 break;
             }
         }
-        $this->options = \Closure::bind(function (Composer $composer, IOInterface $io) {
-            if (isset($this)) {
-                $flex = $this;
-            } else {
-                $flex = new Flex();
-                $flex->activate($composer, $io);
-            }
+        if (!$flex) {
+            $flex = new Flex();
+            $flex->activate($composer, $io);
+        }
 
-            return $flex->initOptions();
-        }, $flex, Flex::class)->__invoke($this->composer, $this->io);
+        $ref = new \ReflectionClass(Flex::class);
+        $method = $ref->getMethod("initOptions");
+        $method->setAccessible(true);
+        $this->options = $method->invoke($flex);
 
         $this->lock = new Lock(str_replace(Factory::getComposerFile(), 'composer.json', 'extra-flex.lock'));
         $this->configurator = new Configurator($composer, $io, $this->options);
