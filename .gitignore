@@ -1,10 +1,14 @@
 *
 !.gitignore
 !composer.json
+!LICENSE
+!README.md
 !src/
 src/*
 !src/Composer/
 !src/Composer/*
+!src/Composer/Command/
+!src/Composer/Command/*
 
 ###> symfony/framework-bundle ###
 .env

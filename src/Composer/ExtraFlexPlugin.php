@@ -6,24 +6,24 @@ use Composer\Composer;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\DependencyResolver\Operation\OperationInterface;
 use Composer\DependencyResolver\Operation\UninstallOperation;
-use Composer\DependencyResolver\Operation\UpdateOperation;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Factory;
 use Composer\Installer\PackageEvent;
 use Composer\Installer\PackageEvents;
 use Composer\IO\IOInterface;
-use Composer\Json\JsonFile;
 use Composer\Package\PackageInterface;
+use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
-use Composer\Script\Event;
-use Composer\Script\ScriptEvents;
 use Symfony\Flex\Configurator;
 use Symfony\Flex\Flex;
 use Symfony\Flex\Lock;
 use Symfony\Flex\Options;
 use Symfony\Flex\Recipe;
 
-class ExtraFlex implements PluginInterface, EventSubscriberInterface
+/**
+ * @author Andrey F. Mindubaev <andrey@mindubaev.ru>
+ */
+class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterface
 {
     /**
      * @var Composer
@@ -49,6 +49,16 @@ class ExtraFlex implements PluginInterface, EventSubscriberInterface
      * @var Lock
      */
     private $lock;
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getCapabilities()
+    {
+        return [
+            'Composer\Plugin\Capability\CommandProvider' => 'Covex\Composer\Command\CommandProvider',
+        ];
+    }
 
     /**
      * {@inheritdoc}
@@ -94,7 +104,7 @@ class ExtraFlex implements PluginInterface, EventSubscriberInterface
         }
         $name = $package->getPrettyName();
 
-        $recipe = $this->createRecipe($package, $operation->getJobType());
+        $recipe = $this->recipeFromPackage($package, $operation->getJobType());
         if ($recipe instanceof Recipe) {
             if ($operation instanceof InstallOperation && !$this->lock->has($name)) {
                 $this->configurator->install($recipe);
@@ -123,76 +133,19 @@ class ExtraFlex implements PluginInterface, EventSubscriberInterface
     }
 
     /**
-     * @param PackageInterface $package
-     * @param string           $job
+     * @param PackageInterface $package Package
+     * @param string           $job     Job type (install/uninstall)
      *
      * @return Recipe|null
      */
-    protected function createRecipe(PackageInterface $package, $job)
+    protected function recipeFromPackage(PackageInterface $package, $job)
     {
         $extra = $package->getExtra();
         if (!isset($extra["recipe-dir"])) {
             return null;
         }
+        $recipePath = $this->composer->getInstallationManager()->getInstallPath($package) . "/" . trim($extra["recipe-dir"], "\\/");
 
-        $name = $package->getPrettyName();
-        $version = $package->getPrettyVersion();
-
-        $path = $this->composer->getInstallationManager()->getInstallPath($package) . "/" .
-            trim($extra["recipe-dir"], "\\/");
-        $path = str_replace("\\", "/", $path);
-
-        $manifestPath = $path . "/manifest.json";
-
-        $json = new JsonFile($manifestPath);
-        if (!$json->exists()) {
-            return null;
-        }
-        $manifest = $json->read();
-        if (!is_array($manifest)) {
-            return null;
-        }
-        $files = array();
-        if (isset($manifest["copy-from-recipe"]) && is_array($manifest["copy-from-recipe"])) {
-            foreach ($manifest["copy-from-recipe"] as $source => $destination) {
-                $directory = $path . "/" . trim($source, "\\/");
-                if (!file_exists($directory)) {
-                    continue;
-                }
-                if (is_dir($directory)) {
-                    $it = new \RecursiveDirectoryIterator($directory, \RecursiveDirectoryIterator::SKIP_DOTS);
-                    $ri = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
-
-                    foreach ($ri as $file) {
-                        /** @var \SplFileInfo $file */
-                        if ($file->isFile()) {
-                            $filename = $file->getRealPath();
-
-                            $key = str_replace($path . "/", "", str_replace("\\", "/", $file));
-                            $files[$key] = [
-                                "contents" => file_get_contents($filename),
-                                "executable" => false,
-                            ];
-                        }
-                    }
-                } elseif (is_file($directory)) {
-                    $files[$source] = [
-                        "contents" => file_get_contents($path . "/" . $source),
-                        "executable" => false
-                    ];
-                }
-            }
-        }
-
-        return new Recipe($package, $name, $job, [
-            "repository" => "vendor", // ???
-            "package" => $name,
-            "version" => $version,
-            "manifest" => $manifest,
-            "files" => $files,
-            "origin" => sprintf('%s:%s@self-contain recipe', $name, $version),
-            "not_installable" => false,
-            "is_contrib" => false,
-        ]);
+        return RecipeHelper::createFromPath($package, $recipePath, $job);
     }
 }

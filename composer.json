@@ -34,7 +34,7 @@
         "symfony": {
             "allow-contrib": false
         },
-        "class": "Covex\\Composer\\ExtraFlex"
+        "class": "Covex\\Composer\\ExtraFlexDebug"
     },
     "scripts": {
         "auto-scripts": {
