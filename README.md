@@ -24,21 +24,21 @@ To include recipe into a package, add extra data to `composer.json`:
 Example
 -------
 
-Apply recipe from `covex-nn/extra-flex-foobar` without require package:
-
-```
-composer create-project symfony/skeleton .
-composer require covex-nn/extra-flex
-composer apply covex-nn/extra-flex-foobar 1.0.2
-cat composer.json
-```
-
 Require `covex-nn/extra-flex-foobar` and apply recipe immediately:
 
 ```
 composer create-project symfony/skeleton .
 composer require covex-nn/extra-flex
 composer require covex-nn/extra-flex-foobar
+composer remove covex-nn/extra-flex-foobar
+```
+
+Apply recipe from `covex-nn/extra-flex-foobar` without require package:
+
+```
+composer create-project symfony/skeleton .
+composer require covex-nn/extra-flex
+composer apply covex-nn/extra-flex-foobar 1.0.2
 cat composer.json
 ```
 

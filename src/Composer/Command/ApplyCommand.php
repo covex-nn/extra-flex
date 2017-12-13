@@ -77,7 +77,7 @@ class ApplyCommand extends BaseCommand
                 $recipe = RecipeHelper::createFromPath($package, $recipePath, "install");
                 if ($recipe instanceof Recipe) {
                     $output->writeln("  - Applying recipe");
-                    $this->plugin->applyRecipe($recipe);
+                    $this->plugin->applyRecipe($recipe, false);
                 } else {
                     $output->writeln("  - Recipe is not valid");
                 }

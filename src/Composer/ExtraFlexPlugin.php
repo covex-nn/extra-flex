@@ -118,8 +118,9 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
      * Install recipe
      *
      * @param Recipe $recipe
+     * @param bool   $updateLock
      */
-    public function applyRecipe(Recipe $recipe)
+    public function applyRecipe(Recipe $recipe, $updateLock = true)
     {
         $job = $recipe->getJob();
         $package = $recipe->getPackage();
@@ -130,7 +131,9 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
             $this->configurator->unconfigure($recipe);
             $this->lock->remove($package->getPrettyName());
         }
-        $this->lock->write();
+        if ($updateLock) {
+            $this->lock->write();
+        }
     }
 
     /**
