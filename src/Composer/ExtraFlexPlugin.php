@@ -126,7 +126,7 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
         if ('install' === $job) {
             $this->configurator->install($recipe);
             $this->lock->add($package->getPrettyName(), $package->getPrettyVersion());
-        } elseif ('uninstall' == $job) {
+        } elseif ('uninstall' === $job) {
             $this->configurator->unconfigure($recipe);
             $this->lock->remove($package->getPrettyName());
         }
