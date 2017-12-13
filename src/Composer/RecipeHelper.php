@@ -11,6 +11,15 @@ use Symfony\Flex\Recipe;
  */
 class RecipeHelper
 {
+    const EXTRA_RECIPE_DIR = "recipe-dir";
+
+    /**
+     * @param PackageInterface $package
+     * @param string           $path
+     * @param string           $job
+     *
+     * @return null|Recipe
+     */
     public static function createFromPath(PackageInterface $package, $path, $job)
     {
         $path = str_replace("\\", "/", $path);

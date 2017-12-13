@@ -104,20 +104,33 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
         }
         $name = $package->getPrettyName();
 
-        $recipe = $this->recipeFromPackage($package, $operation->getJobType());
+        $recipe = $this->recipeFromInstalledPackage($package, $operation->getJobType());
         if ($recipe instanceof Recipe) {
             if ($operation instanceof InstallOperation && !$this->lock->has($name)) {
-                $this->configurator->install($recipe);
-
-                $this->lock->add($name, $package->getPrettyVersion());
-                $this->lock->write();
+                $this->applyRecipe($recipe);
             } elseif ($operation instanceof UninstallOperation && $this->lock->has($name)) {
-                $this->configurator->unconfigure($recipe);
-
-                $this->lock->remove($name);
-                $this->lock->write();
+                $this->applyRecipe($recipe);
             }
         }
+    }
+
+    /**
+     * Install recipe
+     *
+     * @param Recipe $recipe
+     */
+    public function applyRecipe(Recipe $recipe)
+    {
+        $job = $recipe->getJob();
+        $package = $recipe->getPackage();
+        if ('install' === $job) {
+            $this->configurator->install($recipe);
+            $this->lock->add($package->getPrettyName(), $package->getPrettyVersion());
+        } elseif ('uninstall' == $job) {
+            $this->configurator->unconfigure($recipe);
+            $this->lock->remove($package->getPrettyName());
+        }
+        $this->lock->write();
     }
 
     /**
@@ -127,7 +140,6 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     {
         return [
             PackageEvents::POST_PACKAGE_INSTALL => 'update',
-            // PackageEvents::POST_PACKAGE_UPDATE => 'update',
             PackageEvents::PRE_PACKAGE_UNINSTALL => 'update',
         ];
     }
@@ -138,13 +150,14 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
      *
      * @return Recipe|null
      */
-    protected function recipeFromPackage(PackageInterface $package, $job)
+    protected function recipeFromInstalledPackage(PackageInterface $package, $job)
     {
         $extra = $package->getExtra();
-        if (!isset($extra["recipe-dir"])) {
+        if (!isset($extra[RecipeHelper::EXTRA_RECIPE_DIR])) {
             return null;
         }
-        $recipePath = $this->composer->getInstallationManager()->getInstallPath($package) . "/" . trim($extra["recipe-dir"], "\\/");
+        $recipePath = $this->composer->getInstallationManager()
+            ->getInstallPath($package) . "/" . trim($extra[RecipeHelper::EXTRA_RECIPE_DIR], "\\/");
 
         return RecipeHelper::createFromPath($package, $recipePath, $job);
     }
