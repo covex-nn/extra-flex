@@ -37,7 +37,7 @@ class ApplyCommand extends BaseCommand
                 ),
                 new InputArgument(
                     'version',
-                    InputArgument::OPTIONAL,
+                    InputArgument::REQUIRED,
                     'Package version',
                     '*'
                 ),
