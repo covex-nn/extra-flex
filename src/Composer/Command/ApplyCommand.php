@@ -62,7 +62,6 @@ class ApplyCommand extends BaseCommand
             $output->writeln("Package $prettyName was not found!");
         } else {
             $tmpDir = sys_get_temp_dir() . "/" . uniqid("extra-flex");
-            $tmpDir = getcwd() . "/qwerty";
 
             $fs = new Filesystem();
             $fs->emptyDirectory($tmpDir);

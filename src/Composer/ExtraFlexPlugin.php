@@ -6,6 +6,8 @@ use Composer\Composer;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\DependencyResolver\Operation\OperationInterface;
 use Composer\DependencyResolver\Operation\UninstallOperation;
+use Composer\EventDispatcher\Event;
+use Composer\EventDispatcher\EventDispatcher;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Factory;
 use Composer\Installer\PackageEvent;
@@ -15,9 +17,9 @@ use Composer\Package\PackageInterface;
 use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 use Symfony\Flex\Configurator;
+use Symfony\Flex\Downloader;
 use Symfony\Flex\Flex;
 use Symfony\Flex\Lock;
-use Symfony\Flex\Options;
 use Symfony\Flex\Recipe;
 
 /**
@@ -36,19 +38,24 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     private $io;
 
     /**
-     * @var Configurator
+     * @var Configurator|Proxy
      */
     private $configurator;
 
     /**
-     * @var Options
+     * @var Downloader|Proxy
      */
-    private $options;
+    private $downloader;
 
     /**
      * @var Lock
      */
     private $lock;
+
+    /**
+     * @var Flex|Proxy
+     */
+    private $flex;
 
     /**
      * {@inheritdoc}
@@ -65,31 +72,12 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
      */
     public function activate(Composer $composer, IOInterface $io)
     {
-        if (!is_null($this->composer) || !is_null($this->io)) {
-            return;
-        }
         $this->composer = $composer;
         $this->io = $io;
 
-        $flex = null;
-        foreach ($composer->getPluginManager()->getPlugins() as $plugin) {
-            if ($plugin instanceof Flex) {
-                $flex = $plugin;
-                break;
-            }
+        if (!$this->lock) {
+            $this->lock = new Lock(str_replace(Factory::getComposerFile(), 'composer.json', 'extra-flex.lock'));
         }
-        if (!$flex) {
-            $flex = new Flex();
-            $flex->activate($composer, $io);
-        }
-
-        $ref = new \ReflectionClass(Flex::class);
-        $method = $ref->getMethod("initOptions");
-        $method->setAccessible(true);
-        $this->options = $method->invoke($flex);
-
-        $this->lock = new Lock(str_replace(Factory::getComposerFile(), 'composer.json', 'extra-flex.lock'));
-        $this->configurator = new Configurator($composer, $io, $this->options);
     }
 
     public function update(PackageEvent $event)
@@ -136,13 +124,101 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     }
 
     /**
+     * Decorate flex
+     */
+    public function decorate()
+    {
+        if (is_null($this->flex)) {
+            $flex = null;
+            foreach ($this->composer->getPluginManager()->getPlugins() as $plugin) {
+                if ($plugin instanceof Flex || strpos(get_class($plugin), Flex::class . '_composer_tmp') === 0) {
+                    $flex = $plugin;
+                    break;
+                }
+            }
+            if (is_null($flex)) {
+                throw new \RuntimeException('Flex should be installed! Cannot work without Flex plugin =(');
+            }
+            $this->flex = new Proxy($flex);
+        }
+
+        $properties = [
+            'configurator' => ['install', 'unconfigure'],
+            'downloader' => ['getRecipes']
+        ];
+
+        foreach ($properties as $name => $methods) {
+            if (is_null($this->{$name})) {
+                $object = $this->flex->{$name};
+                $proxy = $object instanceof Proxy ? $object : new Proxy($object);
+
+                if (sizeof($methods)) {
+                    $proxy->setEventDispatcher($this->composer->getEventDispatcher());
+                    $proxy->subscribe($name, $methods);
+                }
+
+                $this->{$name} = $proxy;
+            }
+            if (!$this->flex->{$name} instanceof Proxy) {
+                $this->flex->{$name} = $this->{$name};
+            }
+        }
+    }
+
+    /**
+     * Configurator Log
+     *
+     * @param Event $event
+     */
+    public function configuratorLog(Event $event)
+    {
+        if ($this->io->isVerbose()) {
+            $recipe = $event->getArguments()["arguments"][0];
+            /** @var Recipe $recipe */
+            $this->io->write('');
+            $this->io->write(
+                '    Flex/' . $event->getName() . " " . $recipe->getName()
+            );
+        }
+    }
+
+    /**
+     * Downloader Log
+     *
+     * @param Event $event
+     */
+    public function downloaderLog(Event $event)
+    {
+        if ($this->io->isVerbose()) {
+            $this->io->write(
+                '    Flex/' . $event->getName()
+            );
+        }
+    }
+
+    /**
      * {@inheritdoc}
      */
     public static function getSubscribedEvents()
     {
         return [
-            PackageEvents::POST_PACKAGE_INSTALL => 'update',
-            PackageEvents::PRE_PACKAGE_UNINSTALL => 'update',
+            PackageEvents::PRE_PACKAGE_INSTALL => [
+                ['decorate', 42],
+            ],
+            PackageEvents::POST_PACKAGE_INSTALL => [
+                ['decorate', 42],
+                ['update'],
+            ],
+            PackageEvents::PRE_PACKAGE_UNINSTALL => [
+                ['decorate', 42],
+                ['update'],
+            ],
+            'pre-flex-configurator-install' => 'configuratorLog',
+            'post-flex-configurator-install' => 'configuratorLog',
+            'pre-flex-configurator-unconfigure' => 'configuratorLog',
+            'post-flex-configurator-unconfigure' => 'configuratorLog',
+            'pre-flex-downloader-getRecipes' => 'downloaderLog',
+            'post-flex-downloader-getRecipes' => 'downloaderLog',
         ];
     }
 
@@ -159,7 +235,7 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
             return null;
         }
         $recipePath = $this->composer->getInstallationManager()
-            ->getInstallPath($package) . "/" . trim($extra[RecipeHelper::EXTRA_RECIPE_DIR], "\\/");
+            ->getInstallPath($package) . '/' . trim($extra[RecipeHelper::EXTRA_RECIPE_DIR], '\/');
 
         return RecipeHelper::createFromPath($package, $recipePath, $job);
     }

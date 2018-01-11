@@ -44,5 +44,17 @@ cat composer.json
 
 See [`composer.json`][2] from [`covex-nn/extra-flex-foobar`][2] for details.
 
+Extending Flex
+--------------
+
+To extend Flex, your composer-plugin could subscribe to one of Extra-Flex events:
+
+* `pre-flex-configurator-install`
+* `post-flex-configurator-install`
+* `pre-flex-configurator-unconfigure`
+* `post-flex-configurator-unconfigure`
+* `pre-flex-downloader-getRecipes`
+* `post-flex-downloader-getRecipes`
+
 [1]: https://github.com/symfony/flex
 [2]: https://github.com/covex-nn/extra-flex-foobar/blob/master/composer.json
