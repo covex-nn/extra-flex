@@ -15,6 +15,7 @@ use Composer\Installer\PackageEvents;
 use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
 use Composer\Plugin\Capable;
+use Composer\Plugin\PluginEvents;
 use Composer\Plugin\PluginInterface;
 use Symfony\Flex\Configurator;
 use Symfony\Flex\Downloader;
@@ -202,15 +203,13 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     public static function getSubscribedEvents()
     {
         return [
-            PackageEvents::PRE_PACKAGE_INSTALL => [
+            PluginEvents::INIT => [
                 ['decorate', 42],
             ],
             PackageEvents::POST_PACKAGE_INSTALL => [
-                ['decorate', 42],
                 ['update'],
             ],
             PackageEvents::PRE_PACKAGE_UNINSTALL => [
-                ['decorate', 42],
                 ['update'],
             ],
             'pre-flex-configurator-install' => 'configuratorLog',
