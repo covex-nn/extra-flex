@@ -1,0 +1,25 @@
+language: php
+
+sudo: true
+
+php:
+    - 7.1
+
+before_install:
+    - sudo apt-get install -y nodejs
+    - npm install -g json
+    - json -I -f composer.json -e "this.name='extra-flex/local';this.version='1.0.0'"
+    - cat composer.json
+    - mkdir /tmp/extra-flex
+
+install:
+    - cd /tmp/extra-flex
+    - composer create-project symfony/skeleton .
+    - json -I -f composer.json -e "this.repositories=[{type:'path',url:'${TRAVIS_BUILD_DIR}',options:{symlink:true}}]"
+    - cat composer.json
+
+script:
+    - cd /tmp/extra-flex
+    - composer require extra-flex/local covex-nn/extra-flex-foobar
+    - composer remove covex-nn/extra-flex-foobar
+    - composer apply covex-nn/extra-flex-foobar 1.0.2
