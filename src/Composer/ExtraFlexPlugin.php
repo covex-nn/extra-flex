@@ -4,6 +4,7 @@ namespace Covex\Composer;
 
 use Composer\Composer;
 use Composer\DependencyResolver\Operation\InstallOperation;
+use Composer\DependencyResolver\Operation\OperationInterface;
 use Composer\DependencyResolver\Operation\UninstallOperation;
 use Composer\EventDispatcher\Event;
 use Composer\EventDispatcher\EventSubscriberInterface;
@@ -48,9 +49,9 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     private $configurator;
 
     /**
-     * @var InstallOperation|UninstallOperation
+     * @var Recipe[]
      */
-    private $operations = [];
+    private $recipes = [];
 
     /**
      * {@inheritdoc}
@@ -127,7 +128,11 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
         $operation = $event->getOperation();
 
         if ($operation instanceof InstallOperation || $operation instanceof UninstallOperation) {
-            $this->operations[] = $operation;
+            $recipe = $this->getRecipe($operation);
+
+            if ($recipe instanceof Recipe) {
+                $this->recipes[] = $recipe;
+            }
         }
     }
 
@@ -144,14 +149,19 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
      */
     public function update(Event $event)
     {
-        $recipes = $this->getRecipes();
+        if (empty($this->recipes)) {
+            return;
+        }
 
         $this->io->writeError(
-            sprintf('<info>Extra flex operations: %d recipe%s</>', count($recipes), count($recipes) > 1 ? 's' : '')
+            sprintf(
+                '<info>Extra flex operations: %d recipe%s</>',
+                count($this->recipes),
+                count($this->recipes) > 1 ? 's' : ''
+            )
         );
 
-        /** @var InstallOperation|UninstallOperation $operation */
-        foreach ($recipes as $recipe) {
+        foreach ($this->recipes as $recipe) {
             $this->applyRecipe($recipe);
         }
 
@@ -159,28 +169,25 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     }
 
     /**
-     * @return Recipe[]
+     * @param InstallOperation|UninstallOperation|OperationInterface $operation
+     *
+     * @return Recipe|null
      */
-    private function getRecipes(): array
+    private function getRecipe(OperationInterface $operation)
     {
-        $recipes = [];
+        $package = $operation->getPackage();
+        $name    = $package->getPrettyName();
+        $recipe  = $this->recipeFromInstalledPackage($package, $operation->getJobType());
 
-        /** @var InstallOperation|UninstallOperation $operation */
-        foreach ($this->operations as $operation) {
-            $package = $operation->getPackage();
-            $name    = $package->getPrettyName();
-            $recipe  = $this->recipeFromInstalledPackage($package, $operation->getJobType());
-
-            if ($recipe instanceof Recipe) {
-                if ($operation instanceof InstallOperation && !$this->lock->has($name)) {
-                    $recipes[] = $recipe;
-                } elseif ($operation instanceof UninstallOperation && $this->lock->has($name)) {
-                    $recipes[] = $recipe;
-                }
+        if ($recipe instanceof Recipe) {
+            if ($operation instanceof InstallOperation && !$this->lock->has($name)) {
+                return $recipe;
+            } elseif ($operation instanceof UninstallOperation && $this->lock->has($name)) {
+                return $recipe;
             }
         }
 
-        return $recipes;
+        return null;
     }
 
     /**
