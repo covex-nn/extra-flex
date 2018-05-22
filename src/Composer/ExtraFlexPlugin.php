@@ -206,10 +206,15 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
             PluginEvents::INIT => [
                 ['decorate', 42],
             ],
+            PackageEvents::PRE_PACKAGE_INSTALL => [
+                ['decorate', 42],
+            ],
             PackageEvents::POST_PACKAGE_INSTALL => [
+                ['decorate', 42],
                 ['update'],
             ],
             PackageEvents::PRE_PACKAGE_UNINSTALL => [
+                ['decorate', 42],
                 ['update'],
             ],
             'pre-flex-configurator-install' => 'configuratorLog',
