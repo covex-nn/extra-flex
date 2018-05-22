@@ -4,13 +4,13 @@
     "license": "MIT",
     "description": "ExtraFlex plugin",
     "require": {
-        "composer-plugin-api": "^1.1",
-        "symfony/flex": "^1.0"
+        "composer-plugin-api": "^1.1"
     },
     "require-dev": {
         "composer/composer": "^1.5",
         "symfony/console": "^3.4 | ^4.0",
         "symfony/dotenv": "^3.4 | ^4.0",
+        "symfony/flex": "^1.0",
         "symfony/framework-bundle": "^3.4 | ^4.0",
         "symfony/yaml": "^3.4 | ^4.0"
     },
