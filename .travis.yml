@@ -22,4 +22,4 @@ script:
     - cd /tmp/extra-flex
     - composer require extra-flex/local covex-nn/extra-flex-foobar
     - composer remove covex-nn/extra-flex-foobar
-    - composer apply covex-nn/extra-flex-foobar 1.0.2
+    - composer apply covex-nn/extra-flex-foobar
