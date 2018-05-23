@@ -7,20 +7,20 @@ use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\DependencyResolver\Operation\OperationInterface;
 use Composer\DependencyResolver\Operation\UninstallOperation;
 use Composer\EventDispatcher\Event;
-use Composer\EventDispatcher\EventDispatcher;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Factory;
 use Composer\Installer\PackageEvent;
 use Composer\Installer\PackageEvents;
 use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
+use Composer\Plugin\Capability\CommandProvider as CommandProviderCapability;
 use Composer\Plugin\Capable;
-use Composer\Plugin\PluginEvents;
 use Composer\Plugin\PluginInterface;
+use Composer\Script\ScriptEvents;
+use Covex\Composer\Command\CommandProvider;
 use Symfony\Flex\Configurator;
-use Symfony\Flex\Downloader;
-use Symfony\Flex\Flex;
 use Symfony\Flex\Lock;
+use Symfony\Flex\Options;
 use Symfony\Flex\Recipe;
 
 /**
@@ -39,24 +39,55 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     private $io;
 
     /**
-     * @var Configurator|Proxy
-     */
-    private $configurator;
-
-    /**
-     * @var Downloader|Proxy
-     */
-    private $downloader;
-
-    /**
      * @var Lock
      */
     private $lock;
 
     /**
-     * @var Flex|Proxy
+     * @var Configurator
      */
-    private $flex;
+    private $configurator;
+
+    /**
+     * @var Recipe[]
+     */
+    private $recipes = [];
+
+    /**
+     * {@inheritdoc}
+     */
+    public function activate(Composer $composer, IOInterface $io)
+    {
+        $this->composer     = $composer;
+        $this->io           = $io;
+        $this->configurator = new Configurator($composer, $io, self::getOptions($composer));
+
+        if (!$this->lock) {
+            $this->lock = new Lock(str_replace(Factory::getComposerFile(), 'composer.json', 'extra-flex.lock'));
+        }
+    }
+
+    /**
+     * @param Composer $composer
+     *
+     * @return Options
+     */
+    private static function getOptions(Composer $composer): Options
+    {
+        $options = array_merge(
+            [
+                'bin-dir'    => 'bin',
+                'conf-dir'   => 'conf',
+                'config-dir' => 'config',
+                'src-dir'    => 'src',
+                'var-dir'    => 'var',
+                'public-dir' => 'public',
+            ],
+            $composer->getPackage()->getExtra()
+        );
+
+        return new Options($options);
+    }
 
     /**
      * {@inheritdoc}
@@ -64,137 +95,8 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     public function getCapabilities()
     {
         return [
-            'Composer\Plugin\Capability\CommandProvider' => 'Covex\Composer\Command\CommandProvider',
+            CommandProviderCapability::class => CommandProvider::class,
         ];
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function activate(Composer $composer, IOInterface $io)
-    {
-        $this->composer = $composer;
-        $this->io = $io;
-
-        if (!$this->lock) {
-            $this->lock = new Lock(str_replace(Factory::getComposerFile(), 'composer.json', 'extra-flex.lock'));
-        }
-    }
-
-    public function update(PackageEvent $event)
-    {
-        $operation = $event->getOperation();
-        /** @var OperationInterface $operation */
-        if ($operation instanceof InstallOperation || $operation instanceof UninstallOperation) {
-            $package = $operation->getPackage();
-        } else {
-            return;
-        }
-        $name = $package->getPrettyName();
-
-        $recipe = $this->recipeFromInstalledPackage($package, $operation->getJobType());
-        if ($recipe instanceof Recipe) {
-            if ($operation instanceof InstallOperation && !$this->lock->has($name)) {
-                $this->applyRecipe($recipe);
-            } elseif ($operation instanceof UninstallOperation && $this->lock->has($name)) {
-                $this->applyRecipe($recipe);
-            }
-        }
-    }
-
-    /**
-     * Install recipe
-     *
-     * @param Recipe $recipe
-     * @param bool   $updateLock
-     */
-    public function applyRecipe(Recipe $recipe, $updateLock = true)
-    {
-        $job = $recipe->getJob();
-        $package = $recipe->getPackage();
-        if ('install' === $job) {
-            $this->configurator->install($recipe);
-            $this->lock->add($package->getPrettyName(), $package->getPrettyVersion());
-        } elseif ('uninstall' === $job) {
-            $this->configurator->unconfigure($recipe);
-            $this->lock->remove($package->getPrettyName());
-        }
-        if ($updateLock) {
-            $this->lock->write();
-        }
-    }
-
-    /**
-     * Decorate flex
-     */
-    public function decorate()
-    {
-        if (is_null($this->flex)) {
-            $flex = null;
-            foreach ($this->composer->getPluginManager()->getPlugins() as $plugin) {
-                if ($plugin instanceof Flex || strpos(get_class($plugin), Flex::class . '_composer_tmp') === 0) {
-                    $flex = $plugin;
-                    break;
-                }
-            }
-            if (is_null($flex)) {
-                throw new \RuntimeException('Flex should be installed! Cannot work without Flex plugin =(');
-            }
-            $this->flex = new Proxy($flex);
-        }
-
-        $properties = [
-            'configurator' => ['install', 'unconfigure'],
-            'downloader' => ['getRecipes']
-        ];
-
-        foreach ($properties as $name => $methods) {
-            if (is_null($this->{$name})) {
-                $object = $this->flex->{$name};
-                $proxy = $object instanceof Proxy ? $object : new Proxy($object);
-
-                if (sizeof($methods)) {
-                    $proxy->setEventDispatcher($this->composer->getEventDispatcher());
-                    $proxy->subscribe($name, $methods);
-                }
-
-                $this->{$name} = $proxy;
-            }
-            if (!$this->flex->{$name} instanceof Proxy) {
-                $this->flex->{$name} = $this->{$name};
-            }
-        }
-    }
-
-    /**
-     * Configurator Log
-     *
-     * @param Event $event
-     */
-    public function configuratorLog(Event $event)
-    {
-        if ($this->io->isVerbose()) {
-            $recipe = $event->getArguments()["arguments"][0];
-            /** @var Recipe $recipe */
-            $this->io->write('');
-            $this->io->write(
-                '    Flex/' . $event->getName() . " " . $recipe->getName()
-            );
-        }
-    }
-
-    /**
-     * Downloader Log
-     *
-     * @param Event $event
-     */
-    public function downloaderLog(Event $event)
-    {
-        if ($this->io->isVerbose()) {
-            $this->io->write(
-                '    Flex/' . $event->getName()
-            );
-        }
     }
 
     /**
@@ -203,27 +105,89 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
     public static function getSubscribedEvents()
     {
         return [
-            PluginEvents::INIT => [
-                ['decorate', 42],
-            ],
-            PackageEvents::PRE_PACKAGE_INSTALL => [
-                ['decorate', 42],
-            ],
-            PackageEvents::POST_PACKAGE_INSTALL => [
-                ['decorate', 42],
-                ['update'],
+            PackageEvents::POST_PACKAGE_INSTALL  => [
+                ['record'],
             ],
             PackageEvents::PRE_PACKAGE_UNINSTALL => [
-                ['decorate', 42],
-                ['update'],
+                ['record'],
             ],
-            'pre-flex-configurator-install' => 'configuratorLog',
-            'post-flex-configurator-install' => 'configuratorLog',
-            'pre-flex-configurator-unconfigure' => 'configuratorLog',
-            'post-flex-configurator-unconfigure' => 'configuratorLog',
-            'pre-flex-downloader-getRecipes' => 'downloaderLog',
-            'post-flex-downloader-getRecipes' => 'downloaderLog',
+            ScriptEvents::POST_INSTALL_CMD       => [
+                ['install', 42 /* ensure embedded recipes are applied before public recipes */],
+            ],
+            ScriptEvents::POST_UPDATE_CMD        => [
+                ['update', 42 /* ensure embedded recipes are applied before public recipes */],
+            ],
         ];
+    }
+
+    /**
+     * @param PackageEvent $event
+     */
+    public function record(PackageEvent $event)
+    {
+        $operation = $event->getOperation();
+
+        if ($operation instanceof InstallOperation || $operation instanceof UninstallOperation) {
+            $recipe = $this->getRecipe($operation);
+
+            if ($recipe instanceof Recipe) {
+                $this->recipes[] = $recipe;
+            }
+        }
+    }
+
+    /**
+     * @param Event $event
+     */
+    public function install(Event $event)
+    {
+        $this->update($event);
+    }
+
+    /**
+     * @param Event $event
+     */
+    public function update(Event $event)
+    {
+        if (empty($this->recipes)) {
+            return;
+        }
+
+        $this->io->writeError(
+            sprintf(
+                '<info>Extra flex operations: %d recipe%s</>',
+                count($this->recipes),
+                count($this->recipes) > 1 ? 's' : ''
+            )
+        );
+
+        foreach ($this->recipes as $recipe) {
+            $this->applyRecipe($recipe);
+        }
+
+        $this->lock->write();
+    }
+
+    /**
+     * @param InstallOperation|UninstallOperation|OperationInterface $operation
+     *
+     * @return Recipe|null
+     */
+    private function getRecipe(OperationInterface $operation)
+    {
+        $package = $operation->getPackage();
+        $name    = $package->getPrettyName();
+        $recipe  = $this->recipeFromInstalledPackage($package, $operation->getJobType());
+
+        if ($recipe instanceof Recipe) {
+            if ($operation instanceof InstallOperation && !$this->lock->has($name)) {
+                return $recipe;
+            } elseif ($operation instanceof UninstallOperation && $this->lock->has($name)) {
+                return $recipe;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -232,15 +196,52 @@ class ExtraFlexPlugin implements Capable, PluginInterface, EventSubscriberInterf
      *
      * @return Recipe|null
      */
-    protected function recipeFromInstalledPackage(PackageInterface $package, $job)
+    private function recipeFromInstalledPackage(PackageInterface $package, string $job)
     {
         $extra = $package->getExtra();
         if (!isset($extra[RecipeHelper::EXTRA_RECIPE_DIR])) {
             return null;
         }
         $recipePath = $this->composer->getInstallationManager()
-            ->getInstallPath($package) . '/' . trim($extra[RecipeHelper::EXTRA_RECIPE_DIR], '\/');
+                ->getInstallPath($package) . '/' . trim($extra[RecipeHelper::EXTRA_RECIPE_DIR], '\/');
 
         return RecipeHelper::createFromPath($package, $recipePath, $job);
+    }
+
+    /**
+     * Install or uninstall recipe.
+     *
+     * @param Recipe $recipe
+     */
+    public function applyRecipe(Recipe $recipe)
+    {
+        $job     = $recipe->getJob();
+        $package = $recipe->getPackage();
+        if ('install' === $job) {
+            $this->io->writeError(sprintf('  - Configuring %s', $this->formatOrigin($recipe->getOrigin())));
+            $this->configurator->install($recipe);
+            $this->lock->add($package->getPrettyName(), $package->getPrettyVersion());
+        } elseif ('uninstall' === $job) {
+            $this->io->writeError(sprintf('  - Unconfiguring %s', $this->formatOrigin($recipe->getOrigin())));
+            $this->configurator->unconfigure($recipe);
+            $this->lock->remove($package->getPrettyName());
+        }
+    }
+
+    /**
+     * Format a recipe's origin, copied from the flex plugin to achieve the same look and feel.
+     *
+     * @param string $origin
+     *
+     * @return string
+     */
+    private function formatOrigin(string $origin): string
+    {
+        // symfony/translation:3.3@github.com/symfony/recipes:master
+        if (!preg_match('/^([^\:]+?)\:([^\@]+)@(.+)$/', $origin, $matches)) {
+            return $origin;
+        }
+
+        return sprintf('<info>%s</> (<comment>>=%s</>): From %s', $matches[1], $matches[2], $matches[3]);
     }
 }
